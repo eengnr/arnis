@@ -137,6 +137,8 @@ pub fn generate_world_with_options(
                     landuse::accumulate_landuse(&mut editor, way, args, &flood_fill_cache);
                 } else if way.tags.contains_key("leisure") {
                     leisure::accumulate_leisure(&mut editor, way, args, &flood_fill_cache);
+                } else if way.tags.contains_key("natural") {
+                    natural::accumulate_natural(&mut editor, way, args, &flood_fill_cache);
                 }
             }
             ProcessedElement::Relation(rel) => {
@@ -144,6 +146,8 @@ pub fn generate_world_with_options(
                     landuse::accumulate_landuse_from_relation(&mut editor, rel, args, &flood_fill_cache);
                 } else if rel.tags.contains_key("leisure") {
                     leisure::accumulate_leisure_from_relation(&mut editor, rel, args, &flood_fill_cache);
+                } else if rel.tags.contains_key("natural") {
+                    natural::accumulate_natural_from_relation(&mut editor, rel, args, &flood_fill_cache);
                 }
             }
             _ => {}
