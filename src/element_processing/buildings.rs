@@ -3780,11 +3780,14 @@ fn generate_floors_and_ceilings(
         // Use the resolved style flag, not just the OSM tag, since auto-gabled roofs
         // may be generated for residential buildings without a roof:shape tag.
         //
-        // Construction sites stay open at the top.
+        // Construction sites and ruins stay open at the top.
         let has_flat_roof = !args.roof || !generate_non_flat_roof;
-        let skip_top_for_construction = config.condition == BuildingCondition::Construction;
+        let skip_top = matches!(
+            config.condition,
+            BuildingCondition::Construction | BuildingCondition::Ruined
+        );
 
-        if has_flat_roof && !skip_top_for_construction {
+        if has_flat_roof && !skip_top {
             editor.set_block_absolute(
                 config.floor_block,
                 x,
@@ -3891,13 +3894,6 @@ pub fn generate_buildings(
     flood_fill_cache: &FloodFillCache,
     building_passages: &CoordinateBitmap,
 ) {
-    // Tank-style structures route to their own cylindrical renderer.
-    if crate::element_processing::man_made::is_tank_structure(element) {
-        let processed_element = crate::osm_parser::ProcessedElement::Way(element.clone());
-        crate::element_processing::man_made::generate_tank_structure(editor, &processed_element);
-        return;
-    }
-
     // Early return for underground buildings
     if should_skip_underground_building(element) {
         return;
@@ -3908,6 +3904,17 @@ pub fn generate_buildings(
     // Eiffel Tower, London Eye, Utah State Capitol
     const SKIP_WAY_IDS: &[u64] = &[5013364, 204068874, 32920861];
     if SKIP_WAY_IDS.contains(&element.id) {
+        return;
+    }
+
+    // Tank-style structures route to their own cylindrical renderer.
+    if crate::element_processing::man_made::is_tank_structure(element) {
+        let processed_element = crate::osm_parser::ProcessedElement::Way(element.clone());
+        crate::element_processing::man_made::generate_tank_structure(
+            editor,
+            &processed_element,
+            args,
+        );
         return;
     }
 
@@ -4267,7 +4274,8 @@ pub fn generate_buildings(
             );
 
             if !skip_interior && cached_floor_area.len() > 100 {
-                let floor_levels = calculate_floor_levels(start_y_offset, building_height);
+                let floor_levels =
+                    calculate_floor_levels(start_y_offset, effective_building_height);
                 generate_building_interior(
                     editor,
                     &cached_floor_area,
@@ -4276,7 +4284,7 @@ pub fn generate_buildings(
                     bounds.max_x,
                     bounds.max_z,
                     start_y_offset,
-                    building_height,
+                    effective_building_height,
                     style.wall_block,
                     &floor_levels,
                     args,
@@ -6298,13 +6306,119 @@ fn generate_skillion_roof(
     );
 }
 
-/// Pyramidal roof: hipped without the eave overhang.
+/// Pyramidal roof: tapers to a single apex via Chebyshev distance from centre.
 fn generate_pyramidal_roof(
     editor: &mut WorldEditor,
     floor_area: &[(i32, i32)],
     config: &RoofConfig,
 ) {
-    generate_hipped_roof_inner(editor, floor_area, config, false);
+    let footprint: HashSet<(i32, i32)> = floor_area.iter().copied().collect();
+    let shorter_half = config.width().min(config.length()) / 2;
+    let uncapped_boost = ((shorter_half as f64) * 0.85).round().max(1.0) as i32;
+    let wall_cap = ((config.building_height as f64) * 0.6).round().max(1.0) as i32;
+    let peak_boost = uncapped_boost.min(wall_cap);
+    let max_distance = (config.width() / 2).max(config.length() / 2).max(1) as f64;
+
+    let mut roof_heights: HashMap<(i32, i32), i32> = HashMap::new();
+    for &(x, z) in floor_area {
+        let dx = (x - config.center_x).abs() as f64;
+        let dz = (z - config.center_z).abs() as f64;
+        let distance_to_apex = dx.max(dz);
+        let height_factor = (1.0 - distance_to_apex / max_distance).max(0.0);
+        let roof_height = config.base_height + (height_factor * peak_boost as f64) as i32;
+        roof_heights.insert((x, z), roof_height);
+    }
+
+    let stair_block_material = get_stair_block_for_material(config.roof_block);
+
+    place_roof_blocks_with_stairs(
+        editor,
+        floor_area,
+        &roof_heights,
+        config,
+        |x, z, h| {
+            let north_h = roof_heights
+                .get(&(x, z - 1))
+                .copied()
+                .unwrap_or(config.base_height);
+            let south_h = roof_heights
+                .get(&(x, z + 1))
+                .copied()
+                .unwrap_or(config.base_height);
+            let west_h = roof_heights
+                .get(&(x - 1, z))
+                .copied()
+                .unwrap_or(config.base_height);
+            let east_h = roof_heights
+                .get(&(x + 1, z))
+                .copied()
+                .unwrap_or(config.base_height);
+            let lower_n = north_h < h;
+            let lower_s = south_h < h;
+            let lower_w = west_h < h;
+            let lower_e = east_h < h;
+            let lower_count =
+                (lower_n as i32) + (lower_s as i32) + (lower_w as i32) + (lower_e as i32);
+
+            if lower_count == 2 {
+                if lower_n && lower_w {
+                    return create_stair_with_properties(
+                        stair_block_material,
+                        StairFacing::East,
+                        StairShape::OuterRight,
+                    );
+                }
+                if lower_n && lower_e {
+                    return create_stair_with_properties(
+                        stair_block_material,
+                        StairFacing::South,
+                        StairShape::OuterRight,
+                    );
+                }
+                if lower_s && lower_w {
+                    return create_stair_with_properties(
+                        stair_block_material,
+                        StairFacing::East,
+                        StairShape::OuterLeft,
+                    );
+                }
+                if lower_s && lower_e {
+                    return create_stair_with_properties(
+                        stair_block_material,
+                        StairFacing::North,
+                        StairShape::OuterLeft,
+                    );
+                }
+            }
+
+            if lower_n {
+                create_stair_with_properties(
+                    stair_block_material,
+                    StairFacing::South,
+                    StairShape::Straight,
+                )
+            } else if lower_s {
+                create_stair_with_properties(
+                    stair_block_material,
+                    StairFacing::North,
+                    StairShape::Straight,
+                )
+            } else if lower_w {
+                create_stair_with_properties(
+                    stair_block_material,
+                    StairFacing::East,
+                    StairShape::Straight,
+                )
+            } else {
+                create_stair_with_properties(
+                    stair_block_material,
+                    StairFacing::West,
+                    StairShape::Straight,
+                )
+            }
+        },
+        Some(&footprint),
+    );
 }
 
 /// Generates a dome roof

@@ -5,7 +5,7 @@ use crate::osm_parser::{ProcessedElement, ProcessedNode, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use std::collections::HashSet;
 
-pub fn generate_man_made(editor: &mut WorldEditor, element: &ProcessedElement, _args: &Args) {
+pub fn generate_man_made(editor: &mut WorldEditor, element: &ProcessedElement, args: &Args) {
     // Skip if 'layer' or 'level' is negative in the tags
     if let Some(layer) = element.tags().get("layer") {
         if layer.parse::<i32>().unwrap_or(0) < 0 {
@@ -25,7 +25,7 @@ pub fn generate_man_made(editor: &mut WorldEditor, element: &ProcessedElement, _
             "antenna" => generate_antenna(editor, element),
             "chimney" => generate_chimney(editor, element),
             "water_well" => generate_water_well(editor, element),
-            "water_tower" => generate_water_tower(editor, element),
+            "water_tower" => generate_water_tower(editor, element, args),
             "mast" => generate_antenna(editor, element),
             _ => {} // Unknown man_made type, ignore
         }
@@ -293,8 +293,7 @@ fn point_in_polygon(px: i32, pz: i32, polygon: &[(i32, i32)]) -> bool {
         let (xi, zi) = polygon[i];
         let (xj, zj) = polygon[j];
         let intersect = ((zi > pz) != (zj > pz))
-            && (px as f64)
-                < (xj - xi) as f64 * (pz - zi) as f64 / (zj - zi).max(1) as f64 + xi as f64;
+            && (px as f64) < (xj - xi) as f64 * (pz - zi) as f64 / (zj - zi) as f64 + xi as f64;
         if intersect {
             inside = !inside;
         }
@@ -306,12 +305,12 @@ fn point_in_polygon(px: i32, pz: i32, polygon: &[(i32, i32)]) -> bool {
 /// Reads a building height from `height=*` (in metres / blocks) with a
 /// caller-supplied default. Stripping a trailing 'm' keeps OSM values like
 /// `height=18m` working.
-fn read_height(element: &ProcessedElement, default: i32) -> i32 {
+fn read_height(element: &ProcessedElement, default: i32, scale_factor: f64) -> i32 {
     element
         .tags()
         .get("height")
         .and_then(|s| s.trim_end_matches('m').trim().parse::<f64>().ok())
-        .map(|h| h.round() as i32)
+        .map(|h| (h * scale_factor).round() as i32)
         .unwrap_or(default)
         .max(3)
 }
@@ -320,7 +319,7 @@ fn read_height(element: &ProcessedElement, default: i32) -> i32 {
 /// is tagged as a tank structure (`man_made=*` or `building=*` of
 /// `water_tower` / `silo` / `storage_tank`). Dispatches to the right
 /// renderer based on the most specific tag available.
-pub fn generate_tank_structure(editor: &mut WorldEditor, element: &ProcessedElement) {
+pub fn generate_tank_structure(editor: &mut WorldEditor, element: &ProcessedElement, args: &Args) {
     let kind = element
         .tags()
         .get("man_made")
@@ -328,9 +327,9 @@ pub fn generate_tank_structure(editor: &mut WorldEditor, element: &ProcessedElem
         .map(|s| s.as_str());
 
     match kind {
-        Some("water_tower") => generate_water_tower(editor, element),
-        Some("silo") => generate_silo(editor, element),
-        Some("storage_tank") => generate_storage_tank(editor, element),
+        Some("water_tower") => generate_water_tower(editor, element, args),
+        Some("silo") => generate_silo(editor, element, args),
+        Some("storage_tank") => generate_storage_tank(editor, element, args),
         _ => {}
     }
 }
@@ -339,9 +338,9 @@ pub fn generate_tank_structure(editor: &mut WorldEditor, element: &ProcessedElem
 /// elevated on legs. Polygon-aware: legs are placed at the polygon
 /// corners (or 4 cardinal points for round mappings), and the tank
 /// itself is a filled cylinder clipped to the polygon outline.
-fn generate_water_tower(editor: &mut WorldEditor, element: &ProcessedElement) {
+fn generate_water_tower(editor: &mut WorldEditor, element: &ProcessedElement, args: &Args) {
     let footprint = TankFootprint::from_element(element);
-    let total_height = read_height(element, 20);
+    let total_height = read_height(element, 20, args.scale);
     // Lower 60% is the supports, upper 40% is the tank itself.
     let support_height = (total_height as f64 * 0.6).round() as i32;
     let tank_height = total_height - support_height;
@@ -355,10 +354,10 @@ fn generate_water_tower(editor: &mut WorldEditor, element: &ProcessedElement) {
     // the structure without poking outside the polygon.
     let leg_offset = (footprint.radius * 0.85).max(1.0).round() as i32;
     let leg_positions: [(i32, i32); 4] = [
-        (-leg_offset, -leg_offset),
-        (leg_offset, -leg_offset),
-        (-leg_offset, leg_offset),
-        (leg_offset, leg_offset),
+        (-leg_offset, 0),
+        (leg_offset, 0),
+        (0, -leg_offset),
+        (0, leg_offset),
     ];
     for &(dx, dz) in &leg_positions {
         let lx = footprint.center_x + dx;
@@ -421,9 +420,9 @@ fn generate_water_tower(editor: &mut WorldEditor, element: &ProcessedElement) {
 /// filled cylinder running floor-to-cap. Material follows
 /// `building:material=*` (cement/stone → smooth stone; metal → iron;
 /// default smooth stone).
-fn generate_silo(editor: &mut WorldEditor, element: &ProcessedElement) {
+fn generate_silo(editor: &mut WorldEditor, element: &ProcessedElement, args: &Args) {
     let footprint = TankFootprint::from_element(element);
-    let height = read_height(element, 25);
+    let height = read_height(element, 25, args.scale);
 
     let material_tag = element
         .tags()
@@ -450,13 +449,11 @@ fn generate_silo(editor: &mut WorldEditor, element: &ProcessedElement) {
 /// Generate a storage tank - short squat cylinder. Material follows
 /// `content=*` for a colour hint (water → light grey, oil → black,
 /// gas/lng → white).
-fn generate_storage_tank(editor: &mut WorldEditor, element: &ProcessedElement) {
+fn generate_storage_tank(editor: &mut WorldEditor, element: &ProcessedElement, args: &Args) {
     let footprint = TankFootprint::from_element(element);
-    // Storage tanks are visibly short - much wider than tall in real
-    // life. Default 8, capped to 1.5× radius so very wide mappings don't
-    // produce skyscrapers.
     let default_h = ((footprint.radius * 1.2).round() as i32).max(6);
-    let height = read_height(element, default_h).min((footprint.radius * 1.5) as i32 + 4);
+    let height =
+        read_height(element, default_h, args.scale).min((footprint.radius * 1.5) as i32 + 4);
 
     let content = element.tags().get("content").map(|s| s.to_lowercase());
     let body_block = match content.as_deref() {
@@ -491,7 +488,7 @@ pub fn is_tank_structure(way: &ProcessedWay) -> bool {
 }
 
 /// Generate man_made structures for node elements
-pub fn generate_man_made_nodes(editor: &mut WorldEditor, node: &ProcessedNode) {
+pub fn generate_man_made_nodes(editor: &mut WorldEditor, node: &ProcessedNode, args: &Args) {
     if let Some(man_made_type) = node.tags.get("man_made") {
         let element = ProcessedElement::Node(node.clone());
 
@@ -499,7 +496,7 @@ pub fn generate_man_made_nodes(editor: &mut WorldEditor, node: &ProcessedNode) {
             "antenna" => generate_antenna(editor, &element),
             "chimney" => generate_chimney(editor, &element),
             "water_well" => generate_water_well(editor, &element),
-            "water_tower" => generate_water_tower(editor, &element),
+            "water_tower" => generate_water_tower(editor, &element, args),
             "mast" => generate_antenna(editor, &element),
             _ => {} // Unknown man_made type, ignore
         }

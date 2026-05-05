@@ -276,7 +276,7 @@ pub fn generate_world_with_options(
                 } else if node.tags.contains_key("tourism") {
                     tourisms::generate_tourisms(&mut editor, node);
                 } else if node.tags.contains_key("man_made") {
-                    man_made::generate_man_made_nodes(&mut editor, node);
+                    man_made::generate_man_made_nodes(&mut editor, node, args);
                 } else if node.tags.contains_key("power") {
                     power::generate_power_nodes(&mut editor, node);
                 } else if node.tags.contains_key("historic") {
