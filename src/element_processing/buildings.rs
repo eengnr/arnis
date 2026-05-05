@@ -4291,8 +4291,6 @@ pub fn generate_buildings(
                     effective_building_height,
                     style.wall_block,
                     &floor_levels,
-                    args,
-                    element,
                     abs_terrain_offset,
                     is_abandoned_building,
                     effective_passages,

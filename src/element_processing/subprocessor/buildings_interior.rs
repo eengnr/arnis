@@ -289,8 +289,6 @@ pub fn generate_building_interior(
     building_height: i32,
     wall_block: Block,
     floor_levels: &[i32],
-    _args: &crate::args::Args,
-    _element: &crate::osm_parser::ProcessedWay,
     abs_terrain_offset: i32,
     is_abandoned_building: bool,
     building_passages: &CoordinateBitmap,

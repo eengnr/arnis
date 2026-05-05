@@ -333,11 +333,14 @@ pub fn generate_tank_structure(editor: &mut WorldEditor, element: &ProcessedElem
         return;
     }
 
-    let kind = element
-        .tags()
-        .get("man_made")
-        .or_else(|| element.tags().get("building"))
-        .map(|s| s.as_str());
+    let pick_tank = |key: &str| {
+        element
+            .tags()
+            .get(key)
+            .map(|s| s.as_str())
+            .filter(|k| matches!(*k, "water_tower" | "silo" | "storage_tank"))
+    };
+    let kind = pick_tank("man_made").or_else(|| pick_tank("building"));
 
     match kind {
         Some("water_tower") => generate_water_tower(editor, element, args),
@@ -415,17 +418,17 @@ fn generate_water_tower(editor: &mut WorldEditor, element: &ProcessedElement, ar
         );
     }
 
-    // --- Tank ---
-    // Filled cylinder clipped to the polygon. Top cap is one row of
-    // SMOOTH_STONE_SLAB, walls are POLISHED_ANDESITE.
-    for y in support_height..(support_height + tank_height) {
+    // Tank sits at one absolute Y so it stays level on sloped terrain.
+    let tank_base =
+        editor.get_ground_level(footprint.center_x, footprint.center_z) + support_height;
+    for y in tank_base..(tank_base + tank_height) {
         for (cx, cz) in footprint.cells_in_disc(footprint.radius) {
-            editor.set_block(POLISHED_ANDESITE, cx, y, cz, None, None);
+            editor.set_block_absolute(POLISHED_ANDESITE, cx, y, cz, None, None);
         }
     }
-    let cap_y = support_height + tank_height;
+    let cap_y = tank_base + tank_height;
     for (cx, cz) in footprint.cells_in_disc(footprint.radius) {
-        editor.set_block(SMOOTH_STONE_SLAB, cx, cap_y, cz, None, None);
+        editor.set_block_absolute(SMOOTH_STONE_SLAB, cx, cap_y, cz, None, None);
     }
 }
 
@@ -448,14 +451,15 @@ fn generate_silo(editor: &mut WorldEditor, element: &ProcessedElement, args: &Ar
         _ => SMOOTH_STONE,
     };
 
-    for y in 0..height {
+    let base = editor.get_ground_level(footprint.center_x, footprint.center_z);
+    for y in base..(base + height) {
         for (cx, cz) in footprint.cells_in_disc(footprint.radius) {
-            editor.set_block(body_block, cx, y, cz, None, None);
+            editor.set_block_absolute(body_block, cx, y, cz, None, None);
         }
     }
     // Domed cap: small slab on top to suggest a rounded lid.
     for (cx, cz) in footprint.cells_in_disc(footprint.radius) {
-        editor.set_block(SMOOTH_STONE_SLAB, cx, height, cz, None, None);
+        editor.set_block_absolute(SMOOTH_STONE_SLAB, cx, base + height, cz, None, None);
     }
 }
 
@@ -476,14 +480,15 @@ fn generate_storage_tank(editor: &mut WorldEditor, element: &ProcessedElement, a
         _ => SMOOTH_STONE,
     };
 
-    for y in 0..height {
+    let base = editor.get_ground_level(footprint.center_x, footprint.center_z);
+    for y in base..(base + height) {
         for (cx, cz) in footprint.cells_in_disc(footprint.radius) {
-            editor.set_block(body_block, cx, y, cz, None, None);
+            editor.set_block_absolute(body_block, cx, y, cz, None, None);
         }
     }
     // Flat lid.
     for (cx, cz) in footprint.cells_in_disc(footprint.radius) {
-        editor.set_block(SMOOTH_STONE_SLAB, cx, height, cz, None, None);
+        editor.set_block_absolute(SMOOTH_STONE_SLAB, cx, base + height, cz, None, None);
     }
 }
 
