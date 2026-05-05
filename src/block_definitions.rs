@@ -364,8 +364,6 @@ impl Block {
                 map
             })),
 
-            // Cherry leaves — same persistent flag as oak/birch so the
-            // generated cherry tree's blossoms don't decay.
             231 => Some(Value::Compound({
                 let mut map: HashMap<String, Value> = HashMap::new();
                 map.insert("persistent".to_string(), Value::String("true".to_string()));
@@ -1031,25 +1029,7 @@ pub const CYAN_TERRACOTTA: Block = Block::new(253);
 pub const BLACK_WOOL: Block = Block::new(254);
 pub const LIGHT_GRAY_WALL_BANNER: Block = Block::new(255);
 
-/// Maps a block to its corresponding stair variant.
-///
-/// The goal is for the roof stairs to *visually match* the wall material
-/// — picking a stair whose colour and texture sit in the same family.
-/// `STONE_BRICK_STAIRS` is the catch-all default (gray, neutral) for
-/// blocks without a closer match.
-///
-/// Coverage notes:
-/// - Warm reds (BRICK / TERRACOTTA / ORANGE_TERRACOTTA / RED_TERRACOTTA /
-///   GRANITE) → `BRICK_STAIRS` or `POLISHED_GRANITE_STAIRS` (matching reds).
-/// - Yellow tones (END_STONE_BRICKS / YELLOW_TERRACOTTA / SANDSTONE) →
-///   `END_STONE_BRICK_STAIRS` / `SMOOTH_SANDSTONE_STAIRS` (warm tans).
-/// - Dark stones (DEEPSLATE_* / TUFF / COBBLED_DEEPSLATE) →
-///   `POLISHED_BLACKSTONE_BRICK_STAIRS` (dark family).
-/// - Wooden walls (DARK_OAK / SPRUCE) → `OAK_STAIRS` (closest wood stair
-///   we have; vanilla MC has dedicated dark-oak/spruce stairs but we
-///   don't carry constants for them yet).
-/// - Coppers (all 5 variants) → matching cut-copper stair variant.
-/// - Mud / brown family → `MUD_BRICK_STAIRS`.
+/// Maps a block to a stair variant in the same colour family.
 #[inline]
 pub fn get_stair_block_for_material(material: Block) -> Block {
     match material {
@@ -1091,11 +1071,16 @@ pub fn get_stair_block_for_material(material: Block) -> Block {
         MUD => MUD_BRICK_STAIRS,
         BROWN_CONCRETE => MUD_BRICK_STAIRS,
         BROWN_TERRACOTTA => MUD_BRICK_STAIRS,
-        BLUE_TERRACOTTA => MUD_BRICK_STAIRS,
         GRAY_TERRACOTTA => MUD_BRICK_STAIRS,
-        WHITE_TERRACOTTA => MUD_BRICK_STAIRS,
         LIGHT_GRAY_TERRACOTTA => MUD_BRICK_STAIRS,
-        LIGHT_BLUE_TERRACOTTA => STONE_BRICK_STAIRS,
+
+        // White and pale tones
+        WHITE_TERRACOTTA => QUARTZ_STAIRS,
+        LIGHT_BLUE_TERRACOTTA => POLISHED_DIORITE_STAIRS,
+
+        // Cool blues / cyan get dark stone stairs
+        BLUE_TERRACOTTA => DEEPSLATE_BRICK_STAIRS,
+        CYAN_TERRACOTTA => DEEPSLATE_BRICK_STAIRS,
 
         // Yellow and sand tones
         END_STONE_BRICKS => END_STONE_BRICK_STAIRS,
@@ -1202,8 +1187,7 @@ pub static INSTITUTIONAL_WINDOW_OPTIONS: [Block; 4] = [
     LIGHT_BLUE_STAINED_GLASS,
 ];
 
-// Hospitality window options (hotel, restaurant). Expanded from 2 to 5
-// to reduce the previously very-uniform look on hotels.
+// Hospitality window options (hotel, restaurant).
 pub static HOSPITALITY_WINDOW_OPTIONS: [Block; 5] = [
     GLASS,
     WHITE_STAINED_GLASS,
@@ -1220,9 +1204,7 @@ pub static INDUSTRIAL_WINDOW_OPTIONS: [Block; 4] = [
     BROWN_STAINED_GLASS,
 ];
 
-// Religious window options — proxy for stained-glass cathedral windows.
-// Uses the available coloured glass set; at block resolution this reads
-// as "ornate glass" rather than a specific medieval pattern.
+// Religious window options (stained glass).
 pub static RELIGIOUS_WINDOW_OPTIONS: [Block; 5] = [
     BLUE_STAINED_GLASS,
     CYAN_STAINED_GLASS,
@@ -1414,12 +1396,9 @@ static DEFINED_COLORS: &[ColorBlockMapping] = &[
         ],
     ),
     ((191, 147, 42), &[SMOOTH_SANDSTONE, SANDSTONE, SMOOTH_STONE]),
-    // Oxidized-copper green (church domes, copper roofs / facades). RGB picked
-    // from the in-game oxidized_copper texture (~85, 158, 134) so the closest-
-    // distance lookup routes typical green tones (#4f8a6e, #5b9b7d, etc.) here.
+    // Oxidized-copper green
     ((85, 158, 134), &[WAXED_OXIDIZED_COPPER]),
-    // Terracotta-tile orange-red. Captures `building:colour=#cf2f2f` /
-    // `#e96b39` style tile colours that previously fell through to BRICK only.
+    // Terracotta-tile orange-red
     (
         (178, 76, 50),
         &[RED_TERRACOTTA, ORANGE_TERRACOTTA, BRICK, NETHER_BRICK],
@@ -1504,13 +1483,7 @@ pub fn get_castle_wall_block() -> Block {
     castle_wall_options[rng.random_range(0..castle_wall_options.len())]
 }
 
-/// Maps an OSM `building:material` value to a wall Block.
-///
-/// Returns `None` if the material is unrecognized so the caller can fall back
-/// to color- or category-based selection. Match is case-insensitive and treats
-/// underscores/spaces as separators.
-///
-/// Reference: https://wiki.openstreetmap.org/wiki/Key:building:material
+/// Maps an OSM building:material to a wall block, or None if unrecognized.
 pub fn get_wall_block_for_material(material: &str) -> Option<Block> {
     use rand::Rng;
     let mut rng = rand::rng();
@@ -1575,13 +1548,7 @@ pub fn get_wall_block_for_material(material: &str) -> Option<Block> {
     Some(options[rng.random_range(0..options.len())])
 }
 
-/// Maps an OSM `roof:material` value to a Block suitable for roof slabs.
-///
-/// Returns `None` for unrecognized materials so the caller falls through to
-/// existing roof-color or default logic. The block returned is intended to be
-/// used as the source for slab/stairs lookups via `block_to_slab` etc.
-///
-/// Reference: https://wiki.openstreetmap.org/wiki/Key:roof:material
+/// Maps an OSM roof:material to a roof block, or None if unrecognized.
 pub fn get_roof_block_for_material(material: &str) -> Option<Block> {
     use rand::Rng;
     let mut rng = rand::rng();
@@ -1594,17 +1561,9 @@ pub fn get_roof_block_for_material(material: &str) -> Option<Block> {
 
     let options: &[Block] = match normalized.as_str() {
         "glass" | "glazing" => &[GLASS],
-        // Tile / clay / terracotta tags fall back to brick + nether-brick
-        // tones rather than the terracotta block family — terracotta isn't
-        // a convincing roof material in MC, while a brick palette reads
-        // well on a stepped slope.
         "tile" | "tiles" | "rooftiles" | "ceramic" | "ceramictiles" | "claytile" | "claytiles"
         | "terracotta" => &[BRICK, NETHER_BRICK, RED_NETHER_BRICKS, MUD_BRICKS],
         "slate" | "slates" => &[POLISHED_BLACKSTONE, DEEPSLATE_BRICKS, BLACKSTONE],
-        // Copper / patina explicitly returns None — falls through to wall
-        // colour-driven choice or the default STONE_BRICK_SLAB. We keep
-        // WAXED_OXIDIZED_COPPER strictly as a *wall* material; on a roof the
-        // green-patina texture doesn't read well at block resolution.
         "metal" | "steel" | "aluminium" | "aluminum" | "corrugatedsteel" | "corrugatediron"
         | "corrugatedmetal" | "tin" | "zinc" | "lead" | "sheetmetal" | "metalsheet" => {
             &[LIGHT_GRAY_CONCRETE, GRAY_CONCRETE, IRON_BLOCK]

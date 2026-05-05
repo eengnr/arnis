@@ -49,9 +49,6 @@ fn short_hex_color_to_rgb_tuple(text: &str) -> Option<RGBTuple> {
 
 // https://wiki.openstreetmap.org/wiki/Key:colour
 // https://wiki.openstreetmap.org/wiki/Key:roof:colour
-//
-// Names are matched case-insensitively, with optional underscores or spaces
-// stripped (so "Light_Gray" / "light gray" / "lightgray" all resolve).
 fn color_name_to_rgb_tuple(text: &str) -> Option<RGBTuple> {
     let normalized: String = text
         .chars()
