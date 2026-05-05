@@ -110,6 +110,17 @@ const ACACIA_LEAVES_FILL: [(Coord, Coord); 5] = [
     ((0, 8, 0), (0, 9, 0)),
 ];
 
+/// Cherry: medium trunk (~7 logs) with a wide, dense, rounded canopy of
+/// pink blossoms. Leaves run from y=4 to y=9 with a slightly taller
+/// crown than oak — the round_ranges fill in the bulk of the canopy.
+const CHERRY_LEAVES_FILL: [(Coord, Coord); 5] = [
+    ((-1, 4, 0), (-1, 9, 0)),
+    ((1, 4, 0), (1, 9, 0)),
+    ((0, 4, -1), (0, 9, -1)),
+    ((0, 4, 1), (0, 9, 1)),
+    ((0, 9, 0), (0, 10, 0)),
+];
+
 //////////////////////////////////////////////////
 
 /// Maximum horizontal canopy radius used by the predefined tree patterns.
@@ -134,6 +145,7 @@ pub enum TreeType {
     DarkOak,
     Jungle,
     Acacia,
+    Cherry,
 }
 
 // TODO what should be moved in, and what should be referenced?
@@ -183,13 +195,18 @@ impl Tree<'_> {
         // The element_id of 0 is used as a salt for tree-specific randomness
         let mut rng = coord_rng(x, z, 0);
 
-        let tree_type = match rng.random_range(1..=10) {
+        let tree_type = match rng.random_range(1..=11) {
             1..=3 => TreeType::Oak,
             4..=5 => TreeType::Spruce,
             6..=7 => TreeType::Birch,
             8 => TreeType::DarkOak,
             9 => TreeType::Jungle,
             10 => TreeType::Acacia,
+            // Cherry blossoms are uncommon in the wild — same per-tree
+            // chance (1/11 ≈ 9 %) as the other "exotic" types so they
+            // appear as occasional pink accents in residential / park
+            // areas rather than dominating any single biome.
+            11 => TreeType::Cherry,
             _ => unreachable!(),
         };
 
@@ -390,6 +407,24 @@ impl Tree<'_> {
                 round_ranges: [
                     (5..=8).rev().collect(),
                     (5..=7).rev().collect(),
+                    (6..=7).rev().collect(),
+                ],
+            },
+
+            TreeType::Cherry => Self {
+                // Cherry blossom — medium-tall trunk (7 logs) with a
+                // dense rounded canopy of pink leaves. The inner round
+                // covers most of the upper trunk, the middle round
+                // bulks out the crown, and the outer round keeps the
+                // very top tight (so the silhouette reads as a fluffy
+                // ball rather than an upside-down umbrella).
+                log_block: CHERRY_LOG,
+                log_height: 7,
+                leaves_block: CHERRY_LEAVES,
+                leaves_fill: &CHERRY_LEAVES_FILL,
+                round_ranges: [
+                    (4..=9).rev().collect(),
+                    (5..=8).rev().collect(),
                     (6..=7).rev().collect(),
                 ],
             },

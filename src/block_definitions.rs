@@ -115,7 +115,7 @@ impl Block {
             14 => "polished_blackstone_bricks",
             15 => "cracked_stone_bricks",
             16 => "lever",
-            17 => "cut_sandstone",
+            17 => "cobblestone_stairs",
             18 => "cyan_concrete",
             19 => "dark_oak_planks",
             20 => "deepslate_bricks",
@@ -136,7 +136,7 @@ impl Block {
             35 => "hay_block",
             36 => "iron_bars",
             37 => "iron_block",
-            38 => "jungle_planks",
+            38 => "waxed_cut_copper_stairs",
             39 => "ladder",
             40 => "light_blue_concrete",
             41 => "light_blue_terracotta",
@@ -154,15 +154,15 @@ impl Block {
             53 => "orange_terracotta",
             54 => "podzol",
             55 => "polished_andesite",
-            56 => "polished_basalt",
+            56 => "mossy_stone_brick_stairs",
             57 => "quartz_block",
             58 => "polished_blackstone",
             59 => "polished_deepslate",
             60 => "polished_diorite",
             61 => "polished_granite",
-            62 => "prismarine",
-            63 => "purpur_block",
-            64 => "purpur_pillar",
+            62 => "mossy_cobblestone_stairs",
+            63 => "deepslate_brick_stairs",
+            64 => "polished_deepslate_stairs",
             65 => "quartz_bricks",
             66 => "rail",
             67 => "poppy",
@@ -200,8 +200,8 @@ impl Block {
             99 => "purple_concrete",
             100 => "red_concrete",
             101 => "magenta_concrete",
-            102 => "brown_wool",
-            103 => "oxidized_copper",
+            102 => "waxed_oxidized_cut_copper_stairs",
+            103 => "waxed_oxidized_copper",
             104 => "yellow_terracotta",
             105 => "carrots",
             106 => "dark_oak_door",
@@ -283,16 +283,16 @@ impl Block {
             192 => "chiseled_bookshelf",
             193 => "chiseled_bookshelf",
             194 => "chiseled_bookshelf",
-            195 => "chipped_anvil",
+            195 => "waxed_copper_block",
             196 => "damaged_anvil",
             197 => "large_fern",
             198 => "large_fern",
-            199 => "chain",
+            199 => "waxed_exposed_copper",
             200 => "end_rod",
             201 => "lightning_rod",
             202 => "gold_block",
             203 => "sea_lantern",
-            204 => "orange_concrete",
+            204 => "waxed_exposed_chiseled_copper",
             205 => "orange_wool",
             206 => "blue_wool",
             207 => "green_concrete",
@@ -303,7 +303,7 @@ impl Block {
             212 => "spruce_door",
             213 => "spruce_door",
             214 => "smooth_stone_slab",
-            215 => "glass_pane",
+            215 => "waxed_exposed_cut_copper",
             216 => "light_gray_terracotta",
             217 => "oak_slab",
             218 => "oak_door",
@@ -318,8 +318,8 @@ impl Block {
             227 => "blue_stained_glass",
             228 => "light_blue_stained_glass",
             229 => "daylight_detector",
-            230 => "red_stained_glass",
-            231 => "yellow_stained_glass",
+            230 => "cherry_log",
+            231 => "cherry_leaves",
             232 => "purple_stained_glass",
             233 => "orange_stained_glass",
             234 => "magenta_stained_glass",
@@ -359,6 +359,14 @@ impl Block {
             })),
 
             49 => Some(Value::Compound({
+                let mut map: HashMap<String, Value> = HashMap::new();
+                map.insert("persistent".to_string(), Value::String("true".to_string()));
+                map
+            })),
+
+            // Cherry leaves — same persistent flag as oak/birch so the
+            // generated cherry tree's blossoms don't decay.
+            231 => Some(Value::Compound({
                 let mut map: HashMap<String, Value> = HashMap::new();
                 map.insert("persistent".to_string(), Value::String("true".to_string()));
                 map
@@ -857,6 +865,29 @@ pub const RED_CONCRETE: Block = Block::new(100);
 pub const MAGENTA_CONCRETE: Block = Block::new(101);
 
 pub const YELLOW_TERRACOTTA: Block = Block::new(104);
+pub const WAXED_OXIDIZED_COPPER: Block = Block::new(103);
+pub const WAXED_COPPER_BLOCK: Block = Block::new(195);
+// Three more copper variants for the LIGHT_GRAY_TERRACOTTA variety mix:
+// the user picked these specifically because their muted brown-grey
+// average colours sit close to LIGHT_GRAY_TERRACOTTA (135, 107, 98).
+pub const WAXED_EXPOSED_COPPER: Block = Block::new(199);
+pub const WAXED_EXPOSED_CHISELED_COPPER: Block = Block::new(204);
+pub const WAXED_EXPOSED_CUT_COPPER: Block = Block::new(215);
+pub const RED_NETHER_BRICKS: Block = Block::new(68);
+// Cherry blossom tree blocks (1.20+). New tree variant for visual variety.
+pub const CHERRY_LOG: Block = Block::new(230);
+pub const CHERRY_LEAVES: Block = Block::new(231);
+// Extra stair variants for richer roof matching across stone families.
+pub const COBBLESTONE_STAIRS: Block = Block::new(17);
+pub const MOSSY_STONE_BRICK_STAIRS: Block = Block::new(56);
+pub const MOSSY_COBBLESTONE_STAIRS: Block = Block::new(62);
+pub const DEEPSLATE_BRICK_STAIRS: Block = Block::new(63);
+pub const POLISHED_DEEPSLATE_STAIRS: Block = Block::new(64);
+// IDs 38 and 102 were spare in the name table (mapped to "jungle_planks" /
+// "brown_wool" with no const usage anywhere). Repurpose them for the two
+// copper-stair variants so WAXED_OXIDIZED_COPPER walls have a matching stair.
+pub const WAXED_CUT_COPPER_STAIRS: Block = Block::new(38);
+pub const WAXED_OXIDIZED_CUT_COPPER_STAIRS: Block = Block::new(102);
 pub const SNOW_BLOCK: Block = Block::new(111);
 
 pub const SIGN: Block = Block::new(113);
@@ -1003,41 +1034,110 @@ pub const CYAN_TERRACOTTA: Block = Block::new(253);
 pub const BLACK_WOOL: Block = Block::new(254);
 pub const LIGHT_GRAY_WALL_BANNER: Block = Block::new(255);
 
-/// Maps a block to its corresponding stair variant
+/// Maps a block to its corresponding stair variant.
+///
+/// The goal is for the roof stairs to *visually match* the wall material
+/// — picking a stair whose colour and texture sit in the same family.
+/// `STONE_BRICK_STAIRS` is the catch-all default (gray, neutral) for
+/// blocks without a closer match.
+///
+/// Coverage notes:
+/// - Warm reds (BRICK / TERRACOTTA / ORANGE_TERRACOTTA / RED_TERRACOTTA /
+///   GRANITE) → `BRICK_STAIRS` or `POLISHED_GRANITE_STAIRS` (matching reds).
+/// - Yellow tones (END_STONE_BRICKS / YELLOW_TERRACOTTA / SANDSTONE) →
+///   `END_STONE_BRICK_STAIRS` / `SMOOTH_SANDSTONE_STAIRS` (warm tans).
+/// - Dark stones (DEEPSLATE_* / TUFF / COBBLED_DEEPSLATE) →
+///   `POLISHED_BLACKSTONE_BRICK_STAIRS` (dark family).
+/// - Wooden walls (DARK_OAK / SPRUCE) → `OAK_STAIRS` (closest wood stair
+///   we have; vanilla MC has dedicated dark-oak/spruce stairs but we
+///   don't carry constants for them yet).
+/// - Coppers (all 5 variants) → matching cut-copper stair variant.
+/// - Mud / brown family → `MUD_BRICK_STAIRS`.
 #[inline]
 pub fn get_stair_block_for_material(material: Block) -> Block {
     match material {
+        // Stone family
         STONE_BRICKS => STONE_BRICK_STAIRS,
-        MUD_BRICKS => MUD_BRICK_STAIRS,
-        OAK_PLANKS => OAK_STAIRS,
-        POLISHED_ANDESITE => STONE_BRICK_STAIRS,
-        SMOOTH_STONE => POLISHED_ANDESITE_STAIRS,
-        OAK_PLANKS => OAK_STAIRS,
-        ANDESITE => STONE_BRICK_STAIRS,
+        STONE => COBBLESTONE_STAIRS,
+        COBBLESTONE => COBBLESTONE_STAIRS,
+        MOSSY_COBBLESTONE => MOSSY_COBBLESTONE_STAIRS,
+        MOSSY_STONE_BRICKS => MOSSY_STONE_BRICK_STAIRS,
+        CRACKED_STONE_BRICKS => STONE_BRICK_STAIRS,
         CHISELED_STONE_BRICKS => STONE_BRICK_STAIRS,
-        BLACK_TERRACOTTA => POLISHED_BLACKSTONE_BRICK_STAIRS,
+        TUFF => COBBLESTONE_STAIRS,
+        ANDESITE => POLISHED_ANDESITE_STAIRS,
+        POLISHED_ANDESITE => POLISHED_ANDESITE_STAIRS,
+        SMOOTH_STONE => POLISHED_ANDESITE_STAIRS,
+        DIORITE => POLISHED_DIORITE_STAIRS,
+        POLISHED_DIORITE => POLISHED_DIORITE_STAIRS,
+
+        // Dark stone family
+        DEEPSLATE => DEEPSLATE_BRICK_STAIRS,
+        DEEPSLATE_BRICKS => DEEPSLATE_BRICK_STAIRS,
+        POLISHED_DEEPSLATE => POLISHED_DEEPSLATE_STAIRS,
+        COBBLED_DEEPSLATE => DEEPSLATE_BRICK_STAIRS,
         BLACKSTONE => POLISHED_BLACKSTONE_BRICK_STAIRS,
-        BLUE_TERRACOTTA => MUD_BRICK_STAIRS,
-        BRICK => BRICK_STAIRS,
-        BROWN_CONCRETE => MUD_BRICK_STAIRS,
-        BROWN_TERRACOTTA => MUD_BRICK_STAIRS,
-        DEEPSLATE_BRICKS => STONE_BRICK_STAIRS,
-        END_STONE_BRICKS => END_STONE_BRICK_STAIRS,
-        GRAY_CONCRETE => POLISHED_BLACKSTONE_BRICK_STAIRS,
-        GRAY_TERRACOTTA => MUD_BRICK_STAIRS,
-        LIGHT_BLUE_TERRACOTTA => STONE_BRICK_STAIRS,
-        LIGHT_GRAY_CONCRETE => STONE_BRICK_STAIRS,
-        NETHER_BRICK => NETHER_BRICK_STAIRS,
         POLISHED_BLACKSTONE => POLISHED_BLACKSTONE_BRICK_STAIRS,
         POLISHED_BLACKSTONE_BRICKS => POLISHED_BLACKSTONE_BRICK_STAIRS,
-        POLISHED_DEEPSLATE => STONE_BRICK_STAIRS,
+        BLACK_TERRACOTTA => POLISHED_BLACKSTONE_BRICK_STAIRS,
+
+        // ─── Warm reds / browns ─────────────────────────────────────
+        BRICK => BRICK_STAIRS,
+        TERRACOTTA => BRICK_STAIRS,
+        ORANGE_TERRACOTTA => BRICK_STAIRS,
+        RED_TERRACOTTA => BRICK_STAIRS,
+        GRANITE => POLISHED_GRANITE_STAIRS,
         POLISHED_GRANITE => POLISHED_GRANITE_STAIRS,
-        QUARTZ_BLOCK => POLISHED_DIORITE_STAIRS,
-        QUARTZ_BRICKS => POLISHED_DIORITE_STAIRS,
+
+        // ─── Mud / brown / muted earth tones ────────────────────────
+        MUD_BRICKS => MUD_BRICK_STAIRS,
+        MUD => MUD_BRICK_STAIRS,
+        BROWN_CONCRETE => MUD_BRICK_STAIRS,
+        BROWN_TERRACOTTA => MUD_BRICK_STAIRS,
+        BLUE_TERRACOTTA => MUD_BRICK_STAIRS,
+        GRAY_TERRACOTTA => MUD_BRICK_STAIRS,
+        WHITE_TERRACOTTA => MUD_BRICK_STAIRS,
+        LIGHT_GRAY_TERRACOTTA => MUD_BRICK_STAIRS,
+        LIGHT_BLUE_TERRACOTTA => STONE_BRICK_STAIRS,
+
+        // ─── Yellow / sand tones ────────────────────────────────────
+        END_STONE_BRICKS => END_STONE_BRICK_STAIRS,
+        YELLOW_TERRACOTTA => SMOOTH_SANDSTONE_STAIRS,
         SANDSTONE => SMOOTH_SANDSTONE_STAIRS,
         SMOOTH_SANDSTONE => SMOOTH_SANDSTONE_STAIRS,
+
+        // ─── Whites / quartz ────────────────────────────────────────
+        QUARTZ_BLOCK => POLISHED_DIORITE_STAIRS,
+        QUARTZ_BRICKS => POLISHED_DIORITE_STAIRS,
+        SMOOTH_QUARTZ => POLISHED_DIORITE_STAIRS,
         WHITE_CONCRETE => QUARTZ_STAIRS,
-        WHITE_TERRACOTTA => MUD_BRICK_STAIRS,
+
+        // ─── Greys / concretes ──────────────────────────────────────
+        GRAY_CONCRETE => POLISHED_BLACKSTONE_BRICK_STAIRS,
+        LIGHT_GRAY_CONCRETE => STONE_BRICK_STAIRS,
+
+        // ─── Nether-bricks family ───────────────────────────────────
+        NETHER_BRICK => NETHER_BRICK_STAIRS,
+        RED_NETHER_BRICKS => NETHER_BRICK_STAIRS,
+
+        // ─── Coppers (all five variants share cut-copper stairs) ────
+        WAXED_OXIDIZED_COPPER => WAXED_OXIDIZED_CUT_COPPER_STAIRS,
+        WAXED_COPPER_BLOCK => WAXED_CUT_COPPER_STAIRS,
+        WAXED_EXPOSED_COPPER => WAXED_CUT_COPPER_STAIRS,
+        WAXED_EXPOSED_CHISELED_COPPER => WAXED_CUT_COPPER_STAIRS,
+        WAXED_EXPOSED_CUT_COPPER => WAXED_CUT_COPPER_STAIRS,
+
+        // ─── Wood ───────────────────────────────────────────────────
+        OAK_PLANKS => OAK_STAIRS,
+        SPRUCE_PLANKS => OAK_STAIRS,
+        DARK_OAK_PLANKS => OAK_STAIRS,
+        OAK_LOG => OAK_STAIRS,
+        SPRUCE_LOG => OAK_STAIRS,
+
+        // ─── Misc ───────────────────────────────────────────────────
+        IRON_BLOCK => POLISHED_BLACKSTONE_BRICK_STAIRS,
+        HAY_BALE => OAK_STAIRS,
+
         _ => STONE_BRICK_STAIRS,
     }
 }
@@ -1088,19 +1188,32 @@ pub static WINDOW_VARIATIONS: [Block; 7] = [
 ];
 
 // Residential window options
-pub static RESIDENTIAL_WINDOW_OPTIONS: [Block; 4] = [
+pub static RESIDENTIAL_WINDOW_OPTIONS: [Block; 6] = [
     GLASS,
     WHITE_STAINED_GLASS,
     LIGHT_GRAY_STAINED_GLASS,
     BROWN_STAINED_GLASS,
+    TINTED_GLASS,
+    LIGHT_BLUE_STAINED_GLASS,
 ];
 
 // Institutional window options (hospital, school, etc.)
-pub static INSTITUTIONAL_WINDOW_OPTIONS: [Block; 3] =
-    [GLASS, WHITE_STAINED_GLASS, LIGHT_GRAY_STAINED_GLASS];
+pub static INSTITUTIONAL_WINDOW_OPTIONS: [Block; 4] = [
+    GLASS,
+    WHITE_STAINED_GLASS,
+    LIGHT_GRAY_STAINED_GLASS,
+    LIGHT_BLUE_STAINED_GLASS,
+];
 
-// Hospitality window options (hotel, restaurant)
-pub static HOSPITALITY_WINDOW_OPTIONS: [Block; 2] = [GLASS, WHITE_STAINED_GLASS];
+// Hospitality window options (hotel, restaurant). Expanded from 2 to 5
+// to reduce the previously very-uniform look on hotels.
+pub static HOSPITALITY_WINDOW_OPTIONS: [Block; 5] = [
+    GLASS,
+    WHITE_STAINED_GLASS,
+    GRAY_STAINED_GLASS,
+    LIGHT_BLUE_STAINED_GLASS,
+    BROWN_STAINED_GLASS,
+];
 
 // Industrial window options
 pub static INDUSTRIAL_WINDOW_OPTIONS: [Block; 4] = [
@@ -1108,6 +1221,17 @@ pub static INDUSTRIAL_WINDOW_OPTIONS: [Block; 4] = [
     GRAY_STAINED_GLASS,
     LIGHT_GRAY_STAINED_GLASS,
     BROWN_STAINED_GLASS,
+];
+
+// Religious window options — proxy for stained-glass cathedral windows.
+// Uses the available coloured glass set; at block resolution this reads
+// as "ornate glass" rather than a specific medieval pattern.
+pub static RELIGIOUS_WINDOW_OPTIONS: [Block; 5] = [
+    BLUE_STAINED_GLASS,
+    CYAN_STAINED_GLASS,
+    LIGHT_BLUE_STAINED_GLASS,
+    BROWN_STAINED_GLASS,
+    WHITE_STAINED_GLASS,
 ];
 
 // Window types for different building styles (non-deterministic, for backwards compatibility)
@@ -1134,6 +1258,9 @@ pub fn get_window_block_for_building_type_with_rng(
         }
         "industrial" | "warehouse" => {
             INDUSTRIAL_WINDOW_OPTIONS[rng.random_range(0..INDUSTRIAL_WINDOW_OPTIONS.len())]
+        }
+        "religious" | "church" | "cathedral" | "chapel" | "mosque" | "synagogue" | "temple" => {
+            RELIGIOUS_WINDOW_OPTIONS[rng.random_range(0..RELIGIOUS_WINDOW_OPTIONS.len())]
         }
         _ => WINDOW_VARIATIONS[rng.random_range(0..WINDOW_VARIATIONS.len())],
     }
@@ -1290,6 +1417,20 @@ static DEFINED_COLORS: &[ColorBlockMapping] = &[
         ],
     ),
     ((191, 147, 42), &[SMOOTH_SANDSTONE, SANDSTONE, SMOOTH_STONE]),
+    // Oxidized-copper green (church domes, copper roofs / facades). RGB picked
+    // from the in-game oxidized_copper texture (~85, 158, 134) so the closest-
+    // distance lookup routes typical green tones (#4f8a6e, #5b9b7d, etc.) here.
+    ((85, 158, 134), &[WAXED_OXIDIZED_COPPER]),
+    // Terracotta-tile orange-red. Captures `building:colour=#cf2f2f` /
+    // `#e96b39` style tile colours that previously fell through to BRICK only.
+    (
+        (178, 76, 50),
+        &[RED_TERRACOTTA, ORANGE_TERRACOTTA, BRICK, NETHER_BRICK],
+    ),
+    (
+        (210, 110, 60),
+        &[ORANGE_TERRACOTTA, BRICK, BROWN_TERRACOTTA, RED_TERRACOTTA],
+    ),
 ];
 
 // Function to randomly select building wall block with alternatives
@@ -1364,4 +1505,129 @@ pub fn get_castle_wall_block() -> Block {
         BRICK,
     ];
     castle_wall_options[rng.random_range(0..castle_wall_options.len())]
+}
+
+/// Maps an OSM `building:material` value to a wall Block.
+///
+/// Returns `None` if the material is unrecognized so the caller can fall back
+/// to color- or category-based selection. Match is case-insensitive and treats
+/// underscores/spaces as separators.
+///
+/// Reference: https://wiki.openstreetmap.org/wiki/Key:building:material
+pub fn get_wall_block_for_material(material: &str) -> Option<Block> {
+    use rand::Rng;
+    let mut rng = rand::rng();
+
+    let normalized: String = material
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_' && *c != '-')
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+
+    let options: &[Block] =
+        match normalized.as_str() {
+            "brick" | "bricks" | "redbrick" => &[BRICK, NETHER_BRICK],
+            "stone" | "limestone" | "sandstone" | "naturalstone" => {
+                &[STONE_BRICKS, COBBLESTONE, SANDSTONE, SMOOTH_STONE, ANDESITE]
+            }
+            "marble" | "granite" => &[POLISHED_GRANITE, POLISHED_DIORITE, QUARTZ_BLOCK],
+            "concrete" | "reinforcedconcrete" | "cementblock" | "cement" | "breezeblock"
+            | "concreteblock" | "concreteblocks" => &[
+                GRAY_CONCRETE,
+                LIGHT_GRAY_CONCRETE,
+                WHITE_CONCRETE,
+                SMOOTH_STONE,
+            ],
+            "plaster" | "stucco" | "render" | "rendering" | "lime_render" => &[
+                WHITE_CONCRETE,
+                LIGHT_GRAY_CONCRETE,
+                QUARTZ_BLOCK,
+                SMOOTH_SANDSTONE,
+            ],
+            "wood" | "timber" | "timberframe" | "halftimber" | "halftimbered" | "loghouse"
+            | "logs" => &[OAK_PLANKS, SPRUCE_PLANKS, DARK_OAK_PLANKS, OAK_LOG],
+            "metal" | "steel" | "iron" | "aluminium" | "aluminum" | "corrugatedsteel"
+            | "corrugatediron" | "corrugatedmetal" | "tin" | "sheetmetal" | "metalsheet" => {
+                &[IRON_BLOCK, LIGHT_GRAY_CONCRETE, GRAY_CONCRETE]
+            }
+            "copper" | "oxidisedcopper" | "oxidizedcopper" | "patina" | "verdigris" => {
+                &[WAXED_OXIDIZED_COPPER]
+            }
+            "glass" => &[GLASS, LIGHT_GRAY_STAINED_GLASS, WHITE_STAINED_GLASS],
+            "tiles" | "tile" | "rooftiles" | "ceramictiles" | "ceramic" | "terracotta" => &[
+                WHITE_TERRACOTTA,
+                BROWN_TERRACOTTA,
+                RED_TERRACOTTA,
+                ORANGE_TERRACOTTA,
+                LIGHT_GRAY_CONCRETE,
+            ],
+            "mud" | "adobe" | "earth" | "clay" | "rammedearth" | "cob" => {
+                &[MUD_BRICKS, BROWN_TERRACOTTA, BROWN_CONCRETE]
+            }
+            "thatch" | "straw" => &[HAY_BALE],
+            "asbestos" | "asbestoscement" | "fibrecement" | "fibercement" => {
+                &[LIGHT_GRAY_CONCRETE, GRAY_CONCRETE]
+            }
+            "vinyl" | "siding" | "vinylsiding" | "weatherboard" | "weatherboarding"
+            | "clapboard" => &[OAK_PLANKS, SPRUCE_PLANKS, WHITE_CONCRETE],
+            "panel" | "panels" | "panelling" | "paneling" | "panelhouse" | "prefab"
+            | "prefabricated" => &[LIGHT_GRAY_CONCRETE, GRAY_CONCRETE, WHITE_CONCRETE],
+            _ => return None,
+        };
+
+    Some(options[rng.random_range(0..options.len())])
+}
+
+/// Maps an OSM `roof:material` value to a Block suitable for roof slabs.
+///
+/// Returns `None` for unrecognized materials so the caller falls through to
+/// existing roof-color or default logic. The block returned is intended to be
+/// used as the source for slab/stairs lookups via `block_to_slab` etc.
+///
+/// Reference: https://wiki.openstreetmap.org/wiki/Key:roof:material
+pub fn get_roof_block_for_material(material: &str) -> Option<Block> {
+    use rand::Rng;
+    let mut rng = rand::rng();
+
+    let normalized: String = material
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_' && *c != '-')
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+
+    let options: &[Block] = match normalized.as_str() {
+        "glass" | "glazing" => &[GLASS],
+        // Tile / clay / terracotta tags fall back to brick + nether-brick
+        // tones rather than the terracotta block family — terracotta isn't
+        // a convincing roof material in MC, while a brick palette reads
+        // well on a stepped slope.
+        "tile" | "tiles" | "rooftiles" | "ceramic" | "ceramictiles" | "claytile" | "claytiles"
+        | "terracotta" => &[BRICK, NETHER_BRICK, RED_NETHER_BRICKS, MUD_BRICKS],
+        "slate" | "slates" => &[POLISHED_BLACKSTONE, DEEPSLATE_BRICKS, BLACKSTONE],
+        // Copper / patina explicitly returns None — falls through to wall
+        // colour-driven choice or the default STONE_BRICK_SLAB. We keep
+        // WAXED_OXIDIZED_COPPER strictly as a *wall* material; on a roof the
+        // green-patina texture doesn't read well at block resolution.
+        "metal" | "steel" | "aluminium" | "aluminum" | "corrugatedsteel" | "corrugatediron"
+        | "corrugatedmetal" | "tin" | "zinc" | "lead" | "sheetmetal" | "metalsheet" => {
+            &[LIGHT_GRAY_CONCRETE, GRAY_CONCRETE, IRON_BLOCK]
+        }
+        "concrete" | "reinforcedconcrete" => &[LIGHT_GRAY_CONCRETE, GRAY_CONCRETE, SMOOTH_STONE],
+        "wood" | "timber" | "shingle" | "shingles" | "woodshingle" | "woodshingles" => {
+            &[OAK_PLANKS, SPRUCE_PLANKS, DARK_OAK_PLANKS]
+        }
+        "thatch" | "straw" | "reed" | "reeds" => &[HAY_BALE],
+        "asphalt" | "bitumen" | "tar" | "tarpaper" | "rolledasphalt" | "rolledroofing" => {
+            &[BLACKSTONE, POLISHED_BLACKSTONE]
+        }
+        "stone" => &[STONE_BRICKS, SMOOTH_STONE, ANDESITE],
+        "gravel" => &[GRAVEL],
+        "grass" | "green" | "vegetation" | "greenroof" | "sod" => &[GRASS_BLOCK, MOSS_BLOCK],
+        "eternit" | "asbestos" | "fibrecement" | "fibercement" => {
+            &[LIGHT_GRAY_CONCRETE, GRAY_CONCRETE]
+        }
+        _ => return None,
+    };
+
+    Some(options[rng.random_range(0..options.len())])
 }
