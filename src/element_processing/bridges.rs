@@ -1,9 +1,12 @@
+use crate::bresenham::bresenham_line;
+use crate::element_processing::highways::highway_block_range;
 use crate::osm_parser::{ProcessedElement, ProcessedWay};
 use crate::world_editor::WorldEditor;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const LAYER_HEIGHT_STEP: i32 = 6;
 const FLAT_TERRAIN_DIP_THRESHOLD: i32 = 4;
+const SHORT_BRIDGE_LENGTH_BLOCKS: usize = 30;
 const BRIDGE_NAME_FUSE_DISTANCE_BLOCKS: i32 = 200;
 const DUAL_CARRIAGEWAY_MAX_DISTANCE_BLOCKS: f32 = 12.0;
 const DUAL_CARRIAGEWAY_HEADING_TOLERANCE_DEG: f32 = 20.0;
@@ -12,10 +15,36 @@ const CENTERLINE_SAMPLE_LIMIT: usize = 5;
 #[derive(Clone, Copy)]
 pub struct BridgeMemberInfo {
     pub deck_y: i32,
-    // None = boundary handled externally (shared with another member or by an external ramp).
-    // Some(terrain_y) = internal ramp from terrain_y at this endpoint up to deck_y.
+    // Some(terrain_y) = ramp from that terrain up to deck_y at this endpoint.
     pub start_internal_ramp: Option<i32>,
     pub end_internal_ramp: Option<i32>,
+}
+
+impl BridgeMemberInfo {
+    pub fn y_at(&self, tds: usize, total_bresenham: usize, ramp_length: usize) -> i32 {
+        if total_bresenham == 0 {
+            return self.deck_y;
+        }
+        let last_idx = total_bresenham - 1;
+        let denom = ramp_length.saturating_sub(1).max(1) as f32;
+
+        if let Some(start_ground_y) = self.start_internal_ramp {
+            if tds < ramp_length {
+                let t = (tds as f32 / denom).min(1.0);
+                let span = (self.deck_y - start_ground_y) as f32;
+                return (start_ground_y as f32 + span * t).round() as i32;
+            }
+        }
+        let dist_from_end = last_idx.saturating_sub(tds);
+        if let Some(end_ground_y) = self.end_internal_ramp {
+            if dist_from_end < ramp_length {
+                let t = (dist_from_end as f32 / denom).min(1.0);
+                let span = (self.deck_y - end_ground_y) as f32;
+                return (end_ground_y as f32 + span * t).round() as i32;
+            }
+        }
+        self.deck_y
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -26,19 +55,30 @@ pub struct BridgeRampInfo {
     pub ground_y: i32,
 }
 
+impl BridgeRampInfo {
+    pub fn y_at(&self, tds: usize, total_bresenham: usize) -> i32 {
+        if total_bresenham == 0 {
+            return self.deck_y;
+        }
+        let last_idx = total_bresenham - 1;
+        let denom = last_idx.max(1) as f32;
+        let (start_y, end_y) = if self.bridge_side_at_start {
+            (self.deck_y, self.ground_y)
+        } else {
+            (self.ground_y, self.deck_y)
+        };
+        let t = (tds as f32 / denom).min(1.0);
+        let span = (end_y - start_y) as f32;
+        (start_y as f32 + span * t).round() as i32
+    }
+}
+
 pub struct BridgeStructureMap {
     members: HashMap<u64, BridgeMemberInfo>,
     ramps: HashMap<u64, BridgeRampInfo>,
 }
 
 impl BridgeStructureMap {
-    pub fn empty() -> Self {
-        Self {
-            members: HashMap::new(),
-            ramps: HashMap::new(),
-        }
-    }
-
     pub fn lookup_member(&self, way_id: u64) -> Option<&BridgeMemberInfo> {
         self.members.get(&way_id)
     }
@@ -64,7 +104,10 @@ impl BridgeStructureMap {
         }
 
         if bridge_ways.is_empty() {
-            return Self::empty();
+            return Self {
+                members: HashMap::new(),
+                ramps: HashMap::new(),
+            };
         }
 
         let mut node_to_bridge_indices: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
@@ -119,7 +162,8 @@ impl BridgeStructureMap {
             if group.len() < 2 {
                 continue;
             }
-            let centroids: Vec<(i32, i32)> = group.iter().map(|&i| centroid(bridge_ways[i])).collect();
+            let centroids: Vec<(i32, i32)> =
+                group.iter().map(|&i| centroid(bridge_ways[i])).collect();
             for i in 0..group.len() {
                 for j in (i + 1)..group.len() {
                     let dx = (centroids[i].0 - centroids[j].0).abs();
@@ -182,7 +226,7 @@ impl BridgeStructureMap {
         let mut members: HashMap<u64, BridgeMemberInfo> = HashMap::new();
         let mut ramps: HashMap<u64, BridgeRampInfo> = HashMap::new();
         // Track ramp ways to make sure each ramp attaches to only one structure.
-        let mut claimed_ramp_ways: HashMap<u64, i32> = HashMap::new();
+        let mut claimed_ramp_ways: HashSet<u64> = HashSet::new();
 
         for group_indices in groups.values() {
             // Count endpoint occurrences across the group to identify boundary vs internal.
@@ -203,10 +247,7 @@ impl BridgeStructureMap {
             let mut had_unlabelled = false;
             for &idx in group_indices {
                 let way = bridge_ways[idx];
-                let raw = way
-                    .tags
-                    .get("layer")
-                    .and_then(|v| v.parse::<i32>().ok());
+                let raw = way.tags.get("layer").and_then(|v| v.parse::<i32>().ok());
                 match raw {
                     Some(l) => max_layer = max_layer.max(l.max(0)),
                     None => had_unlabelled = true,
@@ -230,15 +271,18 @@ impl BridgeStructureMap {
             let terrain_max = *terrain_samples.iter().max().unwrap();
             let terrain_min = *terrain_samples.iter().min().unwrap();
             let dip = terrain_max - terrain_min;
-            let clearance = if dip < FLAT_TERRAIN_DIP_THRESHOLD {
-                max_layer * LAYER_HEIGHT_STEP
-            } else {
-                0
-            };
+            let total_length: usize = group_indices
+                .iter()
+                .map(|&i| way_length_blocks(bridge_ways[i]))
+                .sum();
+            let clearance =
+                if dip < FLAT_TERRAIN_DIP_THRESHOLD && total_length >= SHORT_BRIDGE_LENGTH_BLOCKS {
+                    max_layer * LAYER_HEIGHT_STEP
+                } else {
+                    0
+                };
             let deck_y = terrain_max + clearance;
 
-            // Detect external ramps connecting at boundary nodes.
-            // boundary_xz with at least one external ramp -> handled externally.
             let mut boundary_with_external_ramp: HashMap<(i32, i32), bool> = HashMap::new();
             for (&xz, &count) in &endpoint_counts {
                 if count > 1 {
@@ -258,7 +302,7 @@ impl BridgeStructureMap {
                         continue;
                     }
                     // Each ramp can only attach once; if already claimed, skip.
-                    if claimed_ramp_ways.contains_key(&candidate.id) {
+                    if claimed_ramp_ways.contains(&candidate.id) {
                         continue;
                     }
                     let bridge_side_at_start = (candidate.nodes[0].x, candidate.nodes[0].z) == xz;
@@ -278,7 +322,7 @@ impl BridgeStructureMap {
                         ground_y,
                     };
                     ramps.insert(candidate.id, info);
-                    claimed_ramp_ways.insert(candidate.id, deck_y);
+                    claimed_ramp_ways.insert(candidate.id);
                     found_ramp = true;
                 }
                 boundary_with_external_ramp.insert(xz, found_ramp);
@@ -333,7 +377,11 @@ fn decide_internal_ramp(
         return None;
     }
     // External ramp claimed: no internal ramp.
-    if boundary_with_external_ramp.get(&xz).copied().unwrap_or(false) {
+    if boundary_with_external_ramp
+        .get(&xz)
+        .copied()
+        .unwrap_or(false)
+    {
         return None;
     }
     let ground_y = editor.get_ground_level(xz.0, xz.1);
@@ -341,6 +389,115 @@ fn decide_internal_ramp(
         Some(ground_y)
     } else {
         None
+    }
+}
+
+// (x, z) -> deck Y for every cell on a bridge surface footprint.
+pub struct BridgeSurfaceMap {
+    cells: HashMap<(i32, i32), i32>,
+}
+
+impl BridgeSurfaceMap {
+    pub fn deck_y_at(&self, x: i32, z: i32) -> Option<i32> {
+        self.cells.get(&(x, z)).copied()
+    }
+
+    pub fn contains(&self, x: i32, z: i32) -> bool {
+        self.cells.contains_key(&(x, z))
+    }
+
+    // Highest deck Y within `radius`; lets side features mapped just off the deck ride the bridge.
+    pub fn nearby_deck_y(&self, x: i32, z: i32, radius: i32) -> Option<i32> {
+        if let Some(&y) = self.cells.get(&(x, z)) {
+            return Some(y);
+        }
+        let mut found: Option<i32> = None;
+        for dx in -radius..=radius {
+            for dz in -radius..=radius {
+                if dx == 0 && dz == 0 {
+                    continue;
+                }
+                if let Some(&y) = self.cells.get(&(x + dx, z + dz)) {
+                    found = Some(found.map_or(y, |f| f.max(y)));
+                }
+            }
+        }
+        found
+    }
+
+    pub fn build(
+        elements: &[ProcessedElement],
+        structures: &BridgeStructureMap,
+        scale: f64,
+    ) -> Self {
+        let mut cells: HashMap<(i32, i32), i32> = HashMap::new();
+        for elem in elements {
+            let ProcessedElement::Way(way) = elem else {
+                continue;
+            };
+            if way.nodes.len() < 2 {
+                continue;
+            }
+            let Some(highway_type) = way.tags.get("highway") else {
+                continue;
+            };
+
+            let member = structures.lookup_member(way.id).copied();
+            let ramp = structures.lookup_ramp(way.id).copied();
+            if member.is_none() && ramp.is_none() {
+                continue;
+            }
+
+            let block_range = highway_block_range(highway_type, &way.tags, scale);
+
+            let total_bresenham: usize = way
+                .nodes
+                .windows(2)
+                .map(|p| {
+                    let dx = (p[1].x - p[0].x).unsigned_abs() as usize;
+                    let dz = (p[1].z - p[0].z).unsigned_abs() as usize;
+                    dx.max(dz)
+                })
+                .sum::<usize>()
+                + 1;
+            let internal_ramp_length: usize = {
+                let raw = (total_bresenham as f32 * 0.35).clamp(15.0, 50.0) as usize;
+                let cap = (total_bresenham / 2).max(1);
+                raw.clamp(1, cap)
+            };
+
+            let mut tds: usize = 0;
+            for (seg_idx, window) in way.nodes.windows(2).enumerate() {
+                let bp = bresenham_line(window[0].x, 0, window[0].z, window[1].x, 0, window[1].z);
+                let skip_first = if seg_idx == 0 { 0 } else { 1 };
+                for (cx, _, cz) in bp.iter().skip(skip_first) {
+                    let cell_y = if let Some(info) = member {
+                        info.y_at(tds, total_bresenham, internal_ramp_length)
+                    } else if let Some(info) = ramp {
+                        info.y_at(tds, total_bresenham)
+                    } else {
+                        tds += 1;
+                        continue;
+                    };
+                    for dx in -block_range..=block_range {
+                        for dz in -block_range..=block_range {
+                            let key = (*cx + dx, *cz + dz);
+                            // Keep the higher deck on overlap so node features ride the upper level.
+                            cells
+                                .entry(key)
+                                .and_modify(|existing| {
+                                    if cell_y > *existing {
+                                        *existing = cell_y;
+                                    }
+                                })
+                                .or_insert(cell_y);
+                        }
+                    }
+                    tds += 1;
+                }
+            }
+        }
+        Self { cells }
     }
 }
 
@@ -354,20 +511,14 @@ fn is_bridge_way(way: &ProcessedWay) -> bool {
         .is_some_and(|v| v != "no")
 }
 
-// Approach-ramp candidate: non-bridge highway way with `embankment`,
-// `man_made=embankment`, or `layer >= 1`.
 fn is_ramp_candidate(way: &ProcessedWay) -> bool {
-    if way.tags.contains_key("bridge") {
+    if is_bridge_way(way) {
         return false;
     }
     if way.tags.get("indoor").map(|s| s.as_str()) == Some("yes") {
         return false;
     }
-    if way
-        .tags
-        .get("embankment")
-        .is_some_and(|v| v != "no")
-    {
+    if way.tags.get("embankment").is_some_and(|v| v != "no") {
         return true;
     }
     if way.tags.get("man_made").map(|s| s.as_str()) == Some("embankment") {
@@ -386,7 +537,7 @@ fn effective_layer(way: &ProcessedWay) -> i32 {
         .get("layer")
         .and_then(|v| v.parse::<i32>().ok())
         .map(|l| l.max(0))
-        .unwrap_or(0)
+        .unwrap_or_else(|| if is_bridge_way(way) { 1 } else { 0 })
 }
 
 fn is_oneway(way: &ProcessedWay) -> bool {
@@ -394,6 +545,17 @@ fn is_oneway(way: &ProcessedWay) -> bool {
         way.tags.get("oneway").map(|s| s.as_str()),
         Some("yes") | Some("-1") | Some("true")
     )
+}
+
+fn way_length_blocks(way: &ProcessedWay) -> usize {
+    way.nodes
+        .windows(2)
+        .map(|p| {
+            let dx = (p[1].x - p[0].x) as f32;
+            let dz = (p[1].z - p[0].z) as f32;
+            (dx * dx + dz * dz).sqrt() as usize
+        })
+        .sum()
 }
 
 fn centroid(way: &ProcessedWay) -> (i32, i32) {
@@ -437,9 +599,6 @@ fn centerline_samples(way: &ProcessedWay) -> Vec<(i32, i32)> {
     out
 }
 
-// Two oneway bridge ways form a dual-carriageway pair if their centerlines run
-// roughly parallel and any midpoint of one is within
-// DUAL_CARRIAGEWAY_MAX_DISTANCE_BLOCKS of the other.
 fn are_dual_carriageway_pair(a: &ProcessedWay, b: &ProcessedWay) -> bool {
     let ha = heading_deg(a);
     let hb = heading_deg(b);
@@ -450,8 +609,7 @@ fn are_dual_carriageway_pair(a: &ProcessedWay, b: &ProcessedWay) -> bool {
     if diff > 180.0 {
         diff = 360.0 - diff;
     }
-    // Same-direction (parallel) or opposite (antiparallel) both count, since
-    // the two carriageways may be drawn either way.
+    // Parallel or antiparallel both count — carriageways may be drawn either direction.
     let parallel = diff <= DUAL_CARRIAGEWAY_HEADING_TOLERANCE_DEG
         || (180.0 - diff).abs() <= DUAL_CARRIAGEWAY_HEADING_TOLERANCE_DEG;
     if !parallel {

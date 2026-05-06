@@ -83,11 +83,9 @@ pub fn generate_world_with_options(
     // Amenity processors use this for O(1) nearest-road-block lookups.
     let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale);
 
-    // Resolve bridges into structures: groups of connected/named/parallel bridge
-    // ways that share one deck Y, plus the approach ramp ways that connect them
-    // to ground. Computed once over the DEM-aware editor before any blocks are
-    // placed so highways.rs can render bridges with consistent deck heights.
     let bridge_structures = bridges::BridgeStructureMap::build(&elements, &editor);
+    let bridge_surface =
+        bridges::BridgeSurfaceMap::build(&elements, &bridge_structures, args.scale);
 
     // Process all elements (no longer need to partition boundaries)
     let elements_count: usize = elements.len();
@@ -183,6 +181,7 @@ pub fn generate_world_with_options(
                         &flood_fill_cache,
                         &road_mask,
                         &bridge_structures,
+                        &bridge_surface,
                     );
                 } else if way.tags.contains_key("landuse") {
                     landuse::generate_landuse(
@@ -217,7 +216,7 @@ pub fn generate_world_with_options(
                         &building_footprints,
                     );
                 } else if way.tags.contains_key("barrier") {
-                    barriers::generate_barriers(&mut editor, &element);
+                    barriers::generate_barriers(&mut editor, &element, &bridge_surface);
                 } else if let Some(val) = way.tags.get("waterway") {
                     if val == "dock" {
                         // docks count as water areas
@@ -233,7 +232,7 @@ pub fn generate_world_with_options(
                 {
                     highways::generate_aeroway(&mut editor, way, args);
                 } else if way.tags.get("service") == Some(&"siding".to_string()) {
-                    highways::generate_siding(&mut editor, way);
+                    highways::generate_siding(&mut editor, way, &bridge_surface);
                 } else if way.tags.get("tomb") == Some(&"pyramid".to_string()) {
                     historic::generate_pyramid(&mut editor, way, args, &flood_fill_cache);
                 } else if way.tags.contains_key("man_made") {
@@ -268,7 +267,7 @@ pub fn generate_world_with_options(
                         &road_mask,
                     );
                 } else if node.tags.contains_key("barrier") {
-                    barriers::generate_barrier_nodes(&mut editor, node);
+                    barriers::generate_barrier_nodes(&mut editor, node, &bridge_surface);
                 } else if node.tags.contains_key("highway") {
                     highways::generate_highways(
                         &mut editor,
@@ -278,6 +277,7 @@ pub fn generate_world_with_options(
                         &flood_fill_cache,
                         &road_mask,
                         &bridge_structures,
+                        &bridge_surface,
                     );
                 } else if node.tags.contains_key("tourism") {
                     tourisms::generate_tourisms(&mut editor, node);
