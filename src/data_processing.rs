@@ -83,6 +83,12 @@ pub fn generate_world_with_options(
     // Amenity processors use this for O(1) nearest-road-block lookups.
     let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale);
 
+    // Resolve bridges into structures: groups of connected/named/parallel bridge
+    // ways that share one deck Y, plus the approach ramp ways that connect them
+    // to ground. Computed once over the DEM-aware editor before any blocks are
+    // placed so highways.rs can render bridges with consistent deck heights.
+    let bridge_structures = bridges::BridgeStructureMap::build(&elements, &editor);
+
     // Process all elements (no longer need to partition boundaries)
     let elements_count: usize = elements.len();
     let process_pb: ProgressBar = ProgressBar::new(elements_count as u64);
@@ -176,6 +182,7 @@ pub fn generate_world_with_options(
                         &highway_connectivity,
                         &flood_fill_cache,
                         &road_mask,
+                        &bridge_structures,
                     );
                 } else if way.tags.contains_key("landuse") {
                     landuse::generate_landuse(
@@ -218,8 +225,6 @@ pub fn generate_world_with_options(
                     } else {
                         waterways::generate_waterways(&mut editor, way);
                     }
-                } else if way.tags.contains_key("bridge") {
-                    //bridges::generate_bridges(&mut editor, way, ground_level); // TODO FIX
                 } else if way.tags.contains_key("railway") {
                     railways::generate_railways(&mut editor, way, &mut subway_points);
                 } else if way.tags.contains_key("roller_coaster") {
@@ -272,6 +277,7 @@ pub fn generate_world_with_options(
                         &highway_connectivity,
                         &flood_fill_cache,
                         &road_mask,
+                        &bridge_structures,
                     );
                 } else if node.tags.contains_key("tourism") {
                     tourisms::generate_tourisms(&mut editor, node);
