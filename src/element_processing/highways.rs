@@ -228,7 +228,9 @@ fn stair_fill_cells(prev: (i32, i32), curr: (i32, i32)) -> Vec<(i32, i32)> {
     cells
 }
 
-// Absolute base Y for a node feature: deck Y on a bridge, else terrain + layer_boost.
+// Absolute base Y for a node feature; deck Y on a bridge, else terrain + layer_boost.
+// `bridge_radius`: 0 = exact (lamps, bus stops, on-road signal head), >0 = nearby (off-road
+// signal pole/bars where the anchor sits next to the deck rather than on it).
 #[inline]
 fn node_feature_base_y(
     editor: &WorldEditor,
@@ -236,9 +238,10 @@ fn node_feature_base_y(
     x: i32,
     z: i32,
     layer_boost: i32,
+    bridge_radius: i32,
 ) -> i32 {
     bridge_surface
-        .deck_y_at(x, z)
+        .nearby_deck_y(x, z, bridge_radius)
         .unwrap_or_else(|| editor.get_absolute_y(x, layer_boost, z))
 }
 
@@ -343,7 +346,7 @@ fn generate_highways_internal(
             if let ProcessedElement::Node(first_node) = element {
                 let x: i32 = first_node.x;
                 let z: i32 = first_node.z;
-                let base = node_feature_base_y(editor, bridge_surface, x, z, layer_boost);
+                let base = node_feature_base_y(editor, bridge_surface, x, z, layer_boost, 0);
                 editor.set_block_absolute(COBBLESTONE_WALL, x, base + 1, z, None, None);
                 for dy in 2..=4 {
                     editor.set_block_absolute(OAK_FENCE, x, base + dy, z, None, None);
@@ -358,7 +361,7 @@ fn generate_highways_internal(
                         let x = node.x;
                         let z = node.z;
                         let head_base =
-                            node_feature_base_y(editor, bridge_surface, x, z, layer_boost);
+                            node_feature_base_y(editor, bridge_surface, x, z, layer_boost, 0);
 
                         // Try to build a hanging signal if it's on a road
                         let anchor = road_mask
@@ -374,6 +377,7 @@ fn generate_highways_internal(
                                     ax,
                                     az,
                                     layer_boost,
+                                    4,
                                 );
                                 editor.set_block_absolute(
                                     COBBLESTONE_WALL,
@@ -424,6 +428,7 @@ fn generate_highways_internal(
                                         lx,
                                         lz,
                                         layer_boost,
+                                        4,
                                     );
                                     editor.set_block_absolute(
                                         IRON_BARS,
@@ -499,14 +504,14 @@ fn generate_highways_internal(
             if let ProcessedElement::Node(node) = element {
                 let x = node.x;
                 let z = node.z;
-                let base = node_feature_base_y(editor, bridge_surface, x, z, layer_boost);
+                let base = node_feature_base_y(editor, bridge_surface, x, z, layer_boost, 0);
                 for dy in 1..=3 {
                     editor.set_block_absolute(COBBLESTONE_WALL, x, base + dy, z, None, None);
                 }
 
                 editor.set_block_absolute(WHITE_WOOL, x, base + 4, z, None, None);
                 let neighbor_base =
-                    node_feature_base_y(editor, bridge_surface, x + 1, z, layer_boost);
+                    node_feature_base_y(editor, bridge_surface, x + 1, z, layer_boost, 1);
                 editor.set_block_absolute(WHITE_WOOL, x + 1, neighbor_base + 4, z, None, None);
             }
         } else if element
@@ -825,8 +830,14 @@ fn generate_highways_internal(
                         None
                     };
 
-                    // Skip the leading point on later segments (duplicates prev segment's last).
-                    let skip_first = if segment_index == 0 { 0 } else { 1 };
+                    // Bridges/ramps drive their Y from cumulative tds, so skip the duplicate
+                    // shared endpoint on later segments. Non-bridge slope offsets keep the
+                    // legacy calculate_point_elevation indexing, which expects every point.
+                    let skip_first = if (is_bridge_member || is_bridge_ramp) && segment_index > 0 {
+                        1
+                    } else {
+                        0
+                    };
                     for (point_index, (x, _, z)) in
                         bresenham_points.iter().enumerate().skip(skip_first)
                     {
