@@ -166,12 +166,17 @@ impl BridgeStructureMap {
                 group.iter().map(|&i| centroid(bridge_ways[i])).collect();
             for i in 0..group.len() {
                 for j in (i + 1)..group.len() {
+                    let a = group[i];
+                    let b = group[j];
+                    if effective_layer(bridge_ways[a]) != effective_layer(bridge_ways[b]) {
+                        continue;
+                    }
                     let dx = (centroids[i].0 - centroids[j].0).abs();
                     let dz = (centroids[i].1 - centroids[j].1).abs();
                     if dx <= BRIDGE_NAME_FUSE_DISTANCE_BLOCKS
                         && dz <= BRIDGE_NAME_FUSE_DISTANCE_BLOCKS
                     {
-                        uf.union(group[i], group[j]);
+                        uf.union(a, b);
                     }
                 }
             }

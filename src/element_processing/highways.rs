@@ -1391,12 +1391,6 @@ pub fn generate_siding(
 ) {
     let mut previous_node: Option<XZPoint> = None;
     let siding_block: Block = STONE_BRICK_SLAB;
-    const ROAD_BLOCKS: &[Block] = &[
-        BLACK_CONCRETE,
-        GRAY_CONCRETE_POWDER,
-        CYAN_TERRACOTTA,
-        WHITE_CONCRETE,
-    ];
 
     for node in &element.nodes {
         let current_node = node.xz();
@@ -1413,10 +1407,16 @@ pub fn generate_siding(
 
             for (bx, _, bz) in bresenham_points {
                 if let Some(deck_y) = bridge_surface.deck_y_at(bx, bz) {
-                    if !editor.check_for_block_absolute(bx, deck_y, bz, Some(ROAD_BLOCKS), None) {
+                    if !editor.check_for_block_absolute(
+                        bx,
+                        deck_y,
+                        bz,
+                        Some(ROAD_PROTECTED_SURFACES),
+                        None,
+                    ) {
                         editor.set_block_absolute(siding_block, bx, deck_y + 1, bz, None, None);
                     }
-                } else if !editor.check_for_block(bx, 0, bz, Some(ROAD_BLOCKS)) {
+                } else if !editor.check_for_block(bx, 0, bz, Some(ROAD_PROTECTED_SURFACES)) {
                     editor.set_block(siding_block, bx, 1, bz, None, None);
                 }
             }
